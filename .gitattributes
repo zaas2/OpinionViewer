@@ -1,0 +1,6 @@
+# 1. 强行把所有 .h 文件指定为 C++ 语言
+*.h text linguist-language=cpp
+
+# 2. 如果你引入了 sqlite3 这种第三方库，直接通知 GitHub 忽略它的统计
+# 假设你的第三方库在 3rdparty 或者 vendor 目录下：
+3rdparty/* linguist-vendored
