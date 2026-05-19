@@ -8,3 +8,4 @@ build/
 debug/
 release/
 *.suo
+ParserTester/
