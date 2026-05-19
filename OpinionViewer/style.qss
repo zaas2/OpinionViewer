@@ -1,0 +1,307 @@
+/* =========================================================================
+   1. 窗口底色与内胆装甲 (从 UI 核心提取)
+   ========================================================================= */
+/* 最外层必须完全透明，避免无边框阴影变黑框 */
+QWidget#OpinionViewer {
+    background-color: transparent;
+    font-family: "Microsoft YaHei";
+}
+
+/* 真实的内胆底壳 */
+QWidget#widgetBg {
+    background-color: #1E1E1E;
+    color: #D4D4D4;
+    border-radius: 6px;
+}
+
+/* =========================================================================
+   2. 顶层标题栏区域及其控件 (极客一体化视网膜重构)
+   ========================================================================= */
+QWidget#titleBar {
+    background-color: #1A1A1A; 
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom: 1px solid #252526; 
+}
+
+QLabel#labelAppIcon {
+    qproperty-pixmap: url(:/OpinionViewer/rc/chaxuan.png); /* 👈 这里的路径必须和你 qrc 里封装的图标路径完全一致 */
+    qproperty-scaledContents: true;                  /* 开启自动缩放适应 */
+    min-width: 36px;                                /* 物理焊死图标尺寸 */
+    max-width: 36px;
+    min-height: 32px;
+    max-height: 32px;
+    margin-left: 9px;                              /* 安全呼吸间距 */
+}
+
+QLabel#labelTitle {
+    color: #E5E5E5;             /* 稍微提亮一点，配合粗体 */
+    font-size: 13px;            /* 字号微调大 1px，撑起排版气场 */
+    font-weight: bold;          /* 💥 绝杀：必须用 bold 或者 700 才能彻底触发微软字库的粗体段 */
+    padding-left: 8px; 
+}
+
+/* 标题栏四大金刚按钮：全面微调 */
+QPushButton#btnMin, QPushButton#btnMax, QPushButton#btnClose, QPushButton#btnSettings {
+    background-color: transparent;
+    color: #888888; /* 默认状态下让它们处于半隐匿状态 */
+    border: none;
+    font-size: 12px; /* 减小原生字符的突兀感 */
+    min-width: 45px; /* 撑大鼠标热区，点起来更爽 */
+    min-height: 32px;
+}
+
+/* 鼠标悬停到右上角的功能反馈 */
+QPushButton#btnMin:hover, QPushButton#btnMax:hover, QPushButton#btnSettings:hover {
+    background-color: #2D2D30;
+    color: #FFFFFF; /* 悬停时再点亮，高级感拉满 */
+}
+
+/* 独立设置设置按钮的特殊悬停，防止混淆 */
+QPushButton#btnSettings:hover {
+    background-color: #2D2D30;
+    color: #4EC9B0; /* 只有设置按钮悬停时露出一丝科技绿 */
+}
+
+/* 关闭按钮单独高亮 */
+QPushButton#btnClose:hover {
+    background-color: #E81123;
+    color: #FFFFFF;
+    border-top-right-radius: 6px; /* 完美贴合外壳圆角 */
+}
+
+/* =========================================================================
+   3. 输入框与搜索组件强化
+   ========================================================================= */
+QLineEdit {
+    background-color: #252526;
+    border: 1px solid #3F3F46;
+    color: #D4D4D4;
+    padding: 6px 10px;
+    border-radius: 3px;
+    font-size: 13px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #007ACC;
+}
+
+/* 底部全宽全局搜索框高亮触发 */
+QLineEdit#lineEditSearch {
+    font-size: 14px;
+    border: 1px solid #0E639C;
+    background-color: #1E1E1E;
+}
+
+QLineEdit#lineEditSearch:focus {
+    border: 2px solid #4EC9B0;
+    background-color: #252526;
+}
+
+/* =========================================================================
+   4. 功能性按钮矩阵 (含绿色入库专属与下拉三角强杀)
+   ========================================================================= */
+QPushButton {
+    background-color: #0E639C;
+    color: #FFFFFF;
+    border: none;
+    padding: 6px 15px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #1177BB;
+}
+
+QPushButton:pressed {
+    background-color: #094771;
+}
+
+/* 独立提取：绿色安全入库按钮 */
+QPushButton#btnImport {
+    background-color: #2E8B57;
+}
+QPushButton#btnImport:hover {
+    background-color: #3CB371;
+}
+QPushButton#btnImport:pressed {
+    background-color: #2E7D52;
+}
+
+/* 🚀【核心强杀】：彻底干掉“指定来源”按钮右侧的原生白色高亮三角 */
+QPushButton::menu-indicator {
+    image: none !important;            /* 彻底砍掉系统默认的白色倒三角图片 */
+    subcontrol-position: right center; /* 重新定位 */
+    subcontrol-origin: padding;
+    width: 0px !important;             /* 尺寸归零 */
+    height: 0px !important;
+    padding-right: 0px !important;
+}
+
+/* 🚀【核心强杀】：彻底干掉“指定来源”按钮右侧的原生白色高亮三角 */
+QPushButton::menu-indicator {
+    image: none !important;            
+    subcontrol-position: right center; 
+    subcontrol-origin: padding;
+    width: 0px !important;             
+    height: 0px !important;
+    padding-right: 0px !important;
+}
+/* =========================================================================
+   5. TableView 数据矩阵区与黑化滚动条 (去箭头、扁平化极客重构)
+   ========================================================================= */
+QTableView, MyTableView, QAbstractItemView {
+    background-color: #1E1E1E !important;
+    color: #D4D4D4 !important;
+    gridline-color: #2D2D2D !important; 
+    border: 1px solid #3F3F46 !important;
+    selection-background-color: #04395E !important; 
+    selection-color: #FFFFFF !important;
+    outline: none !important; 
+}
+
+QTableView::item, MyTableView::item {
+    background-color: #1E1E1E !important;
+    color: #D4D4D4 !important;
+    padding: 6px !important; 
+}
+
+QTableView::item:alternate, MyTableView::item:alternate {
+    background-color: #232323 !important; 
+}
+
+QTableView::item:selected, MyTableView::item:selected {
+    background-color: #04395E !important;
+    color: #FFFFFF !important;
+}
+
+QHeaderView, QHeaderView::section {
+    background-color: #252526 !important;
+    color: #85C5B5 !important; 
+    border: 1px solid #2D2D2D !important;
+    padding: 2px 10px 2px 10px !important;    
+    font-weight: bold !important;
+    font-size: 13px !important;
+    font-family: "Microsoft YaHei";
+}
+
+/* --- 垂直滚动条主体 --- */
+MyTableView QScrollBar:vertical, QTableView QScrollBar:vertical, QScrollBar:vertical {
+    background: #1E1E1E !important; 
+    background-color: #1E1E1E !important;
+    width: 10px !important; /* 略微收窄，更精致 */
+    margin: 0px !important;
+    border: none !important;
+}
+
+/* 滑块 */
+MyTableView QScrollBar::handle:vertical, QTableView QScrollBar::handle:vertical, QScrollBar::handle:vertical {
+    background: #424242 !important;
+    background-color: #424242 !important; 
+    min-height: 20px !important; 
+    border-radius: 5px !important; 
+    margin: 0px !important; /* 让滑块撑满宽度 */
+}
+
+MyTableView QScrollBar::handle:vertical:hover, QTableView QScrollBar::handle:vertical:hover, QScrollBar::handle:vertical:hover {
+    background-color: #4F4F4F !important;
+}
+
+/* 🚀【核心干掉垂直箭头】全面置空背景与尺寸，断绝底层绘制 */
+MyTableView QScrollBar::add-line:vertical, QScrollBar::add-line:vertical, QScrollBar::add-line:vertical,
+MyTableView QScrollBar::sub-line:vertical, QScrollBar::sub-line:vertical, QScrollBar::sub-line:vertical {
+    background: none !important;
+    background-color: transparent !important;
+    border: none !important;
+    height: 0px !important;
+    width: 0px !important;
+}
+MyTableView QScrollBar::add-page:vertical, MyTableView QScrollBar::sub-page:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none !important;
+    background-color: transparent !important;
+}
+
+/* --- 水平滚动条主体 --- */
+MyTableView QScrollBar:horizontal, QTableView QScrollBar:horizontal, QScrollBar:horizontal {
+    background: #1E1E1E !important;
+    background-color: #1E1E1E !important; 
+    height: 10px !important; 
+    margin: 0px !important;
+    border: none !important;
+}
+
+/* 滑块 */
+MyTableView QScrollBar::handle:horizontal, QTableView QScrollBar::handle:horizontal, QScrollBar::handle:horizontal {
+    background: #424242 !important;
+    background-color: #424242 !important; 
+    min-width: 20px !important; 
+    border-radius: 5px !important; 
+    margin: 0px !important;
+}
+
+MyTableView QScrollBar::handle:horizontal:hover, QTableView QScrollBar::handle:horizontal:hover, QScrollBar::handle:horizontal:hover {
+    background-color: #4F4F4F !important;
+}
+
+/* 🚀【核心干掉水平箭头】 */
+MyTableView QScrollBar::add-line:horizontal, QScrollBar::add-line:horizontal, QScrollBar::add-line:horizontal,
+MyTableView QScrollBar::sub-line:horizontal, QScrollBar::sub-line:horizontal, QScrollBar::sub-line:horizontal {
+    background: none !important;
+    background-color: transparent !important;
+    border: none !important;
+    width: 0px !important;
+    height: 0px !important;
+}
+MyTableView QScrollBar::add-page:horizontal, MyTableView QScrollBar::sub-page:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: none !important;
+    background-color: transparent !important;
+}
+
+
+/* =========================================================================
+   6. 动态进度窗口防爆装甲 (QProgressDialog 强力穿透版)
+   ========================================================================= */
+/* 🚀 强力修复：用通用属性和强制覆盖 (!important)，彻底剥夺系统白边 */
+QProgressDialog, QDialog[windowTitle="狂暴提取中，请耐心等待"] {
+    background-color: #1E1E1E !important;
+    border: 1px solid #3F3F46 !important;
+}
+
+/* 狙击弹窗里动态生成的标签 */
+QProgressDialog QLabel {
+    background-color: transparent !important;
+    color: #D4D4D4 !important;
+    font-family: "Microsoft YaHei";
+}
+
+/* 狙击弹窗里的进度条 */
+QProgressDialog QProgressBar {
+    background-color: #252526 !important;
+    border: 1px solid #3F3F46 !important;
+    border-radius: 4px;
+    text-align: center;
+    color: #FFFFFF !important;
+    font-weight: bold;
+}
+
+QProgressDialog QProgressBar::chunk {
+    background-color: #04395E !important; 
+    border-radius: 3px;
+}
+
+/* 狙击弹窗里的取消按钮 */
+QProgressDialog QPushButton {
+    background-color: #333337 !important;
+    color: #D4D4D4 !important;
+    border: 1px solid #434346 !important;
+    padding: 5px 15px;
+    border-radius: 4px;
+}
+
+QProgressDialog QPushButton:hover {
+    background-color: #3F3F46 !important;
+    color: #FFFFFF !important;
+}

@@ -1,0 +1,10 @@
+# Qt / VS 忽略规则
+*.obj
+*.exe
+*.pdb
+*.user
+.vs/
+build/
+debug/
+release/
+*.suo

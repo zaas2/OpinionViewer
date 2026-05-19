@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/OpinionViewer">
+        <file>style.qss</file>
+        <file>rc/chaxuan.png</file>
+    </qresource>
+</RCC>
