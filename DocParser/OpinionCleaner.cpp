@@ -13,18 +13,8 @@ std::vector<std::wregex> OpinionCleaner::m_regexFilters;
 std::wregex OpinionCleaner::m_stripNumberingRegex;
 bool OpinionCleaner::m_isConfigLoaded = false;
 
-// 切割字符串
-static std::vector<std::wstring> split(const std::wstring& s, wchar_t delimiter) {
-	std::vector<std::wstring> tokens;
-	std::wstring token;
-	std::wistringstream tokenStream(s);
-	while (std::getline(tokenStream, token, delimiter)) {
-		if (!token.empty()) tokens.push_back(token);
-	}
-	return tokens;
-}
-
 void OpinionCleaner::loadConfig(const std::wstring& iniPath) {
+	// 默认规则（注意 C++ 代码里的双斜杠是没问题的，因为编译器会转义）
 	m_stripNumberingRegex.assign(L"^\\s*([A-Za-z]+\\d+|\\d+)[\\.\\u3001\\:\\uff1a]\\s*(?!\\d)");
 
 	std::ifstream file(iniPath);
@@ -35,9 +25,16 @@ void OpinionCleaner::loadConfig(const std::wstring& iniPath) {
 
 	std::string line;
 	std::wstring currentGroup = L"";
+	int loadedRegexCount = 0;
 
 	while (std::getline(file, line)) {
 		std::wstring wline = StrUtil::trim(StrUtil::utf8_to_wstring(line));
+
+		// 🛡️ 核心修复 1：拔除 Windows UTF-8 文件的隐形炸弹 BOM (\xFEFF)
+		if (!wline.empty() && wline[0] == 0xFEFF) {
+			wline.erase(0, 1);
+		}
+
 		if (wline.empty() || wline[0] == L';' || wline[0] == L'#') continue;
 
 		if (wline.front() == L'[' && wline.back() == L']') {
@@ -54,6 +51,14 @@ void OpinionCleaner::loadConfig(const std::wstring& iniPath) {
 				value = value.substr(1, value.length() - 2);
 			}
 
+			// 🛡️ 核心修复 2：将 INI 中为了防转义写的双斜杠 `\\`，还原回 `\` 给 wregex 使用
+			// 因为 std::ifstream 读到的 `\\s` 就是字面意义的两个字符 '\' 和 's'
+			size_t pos = 0;
+			while ((pos = value.find(L"\\\\", pos)) != std::wstring::npos) {
+				value.replace(pos, 2, L"\\");
+				pos += 1;
+			}
+
 			if (currentGroup == L"General" && key == L"DefaultScanPath") {
 				m_defaultScanPath = value;
 			}
@@ -61,19 +66,26 @@ void OpinionCleaner::loadConfig(const std::wstring& iniPath) {
 				m_stripNumberingRegex.assign(value);
 			}
 			else if (currentGroup == L"CleanRules" && key == L"ExactBlacklist") {
-				m_exactBlacklist = split(value, L'|');
+				m_exactBlacklist = StrUtil::split(value, L'|');
 			}
 			else if (currentGroup == L"CleanRules" && key == L"PrefixBlacklist") {
-				m_prefixBlacklist = split(value, L'|');
+				m_prefixBlacklist = StrUtil::split(value, L'|');
 			}
 			else if (currentGroup == L"RegexBlacklist") {
-				try { m_regexFilters.push_back(std::wregex(value)); }
-				catch (...) {}
+				try {
+					m_regexFilters.push_back(std::wregex(value));
+					loadedRegexCount++;
+				}
+				// 🛡️ 核心修复 3：把生吞的异常吐出来，到底错在哪一目了然！
+				catch (const std::regex_error& e) {
+					std::wcerr << L"❌ 致命错误：正则表达式语法不合法 [" << key << L"] = " << value
+						<< L"\n   原因: " << e.what() << std::endl;
+				}
 			}
 		}
 	}
 	m_isConfigLoaded = true;
-	std::wcout << L"原生 INI 配置文件加载成功，加载正则规则数：" << m_regexFilters.size() << std::endl;
+	std::wcout << L"原生 INI 配置文件加载成功，成功加载正则规则数：" << loadedRegexCount << std::endl;
 }
 
 std::wstring OpinionCleaner::getDefaultScanPath() {

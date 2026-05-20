@@ -53,4 +53,26 @@ namespace StrUtil {
 		}
 		return tokens;
 	}
+
+	inline std::wstring local8bit_to_wstring(const std::string& str) {
+		if (str.empty()) {
+			return L"";
+		}
+
+		// 1. CP_ACP 代表系统默认的 ANSI 代码页 (中文系统下也就是 GBK / CP936)
+		// 先获取转换后需要多少个宽字符的空间
+		int size_needed = MultiByteToWideChar(CP_ACP, 0, str.data(), (int)str.size(), nullptr, 0);
+
+		if (size_needed <= 0) {
+			return L"";
+		}
+
+		// 2. 分配足够的空间
+		std::wstring result(size_needed, 0);
+
+		// 3. 执行真正的转换，把字节流拍进 wstring 的内存里
+		MultiByteToWideChar(CP_ACP, 0, str.data(), (int)str.size(), result.data(), size_needed);
+
+		return result;
+	}
 }

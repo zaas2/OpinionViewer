@@ -6,6 +6,7 @@
 #include <sstream>
 #include <iostream>
 #include "PublicUtils.h"
+#include <vector>
 
 DbWorker::DbWorker() : m_db(nullptr) {}
 
@@ -67,17 +68,42 @@ std::vector<OpinionRecord> DbWorker::searchOpinions(const std::wstring& keyword)
 	sqlite3_stmt* stmt = nullptr;
 	int rc = 0;
 
-	if (keyword.empty()) {
+	// 1. 按空格将输入的 keyword 切分成多个关键词
+	std::vector<std::wstring> keywords;
+	std::wstringstream wss(keyword);
+	std::wstring token;
+	while (wss >> token) {
+		if (!token.empty()) {
+			keywords.push_back(token);
+		}
+	}
+
+	if (keywords.empty()) {
+		// 如果没有输入，或者输入的全是空格，执行全量查询
 		const char* querySql = "SELECT content, source FROM review_opinions ORDER BY id DESC;";
 		rc = sqlite3_prepare_v2(m_db, querySql, -1, &stmt, nullptr);
 	}
 	else {
-		const char* querySql = "SELECT content, source FROM review_opinions WHERE content LIKE ? OR source LIKE ? ORDER BY id DESC;";
-		rc = sqlite3_prepare_v2(m_db, querySql, -1, &stmt, nullptr);
+		// 2. 动态构建 SQL 语句，几个关键词就拼几个 AND (content LIKE ? OR source LIKE ?)
+		std::string querySql = "SELECT content, source FROM review_opinions WHERE ";
+		for (size_t i = 0; i < keywords.size(); ++i) {
+			if (i > 0) querySql += " AND ";
+			querySql += "(content LIKE ? OR source LIKE ?)";
+		}
+		querySql += " ORDER BY id DESC;";
+
+		rc = sqlite3_prepare_v2(m_db, querySql.c_str(), -1, &stmt, nullptr);
+
 		if (rc == SQLITE_OK) {
-			std::string bindKey = "%" + StrUtil::wstring_to_utf8(keyword) + "%";
-			sqlite3_bind_text(stmt, 1, bindKey.c_str(), -1, SQLITE_TRANSIENT);
-			sqlite3_bind_text(stmt, 2, bindKey.c_str(), -1, SQLITE_TRANSIENT);
+			// 3. 循环绑定参数，每个关键词绑定两次 (给 content 和 source 各绑一次)
+			int bindIndex = 1;
+			for (const auto& kw : keywords) {
+				std::string bindKey = "%" + StrUtil::wstring_to_utf8(kw) + "%";
+
+				// SQLITE_TRANSIENT 告诉 SQLite 自己拷贝一份字符串，这样 bindKey 出作用域销毁了也没事
+				sqlite3_bind_text(stmt, bindIndex++, bindKey.c_str(), -1, SQLITE_TRANSIENT);
+				sqlite3_bind_text(stmt, bindIndex++, bindKey.c_str(), -1, SQLITE_TRANSIENT);
+			}
 		}
 	}
 

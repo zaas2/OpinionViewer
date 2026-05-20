@@ -21,6 +21,7 @@
 #include <QTextStream>
 #include <windows.h>
 #include <iostream>
+#include <QStringList>
 
 #include "../DocParser/DocxParser.h"
 #include "../DocParser/OldDocParser.h"
@@ -112,7 +113,7 @@ OpinionViewer::OpinionViewer(QWidget* parent) : baseWindow(parent) {
 		QMessageBox::about(this, "关于",
 			"<h2>施工图审查意见管理工具 V1.0</h2>"
 			"<p><b>Code by:    zaas</b></p>"
-			"<p><b>Date   :20260519</b></p>"
+			"<p><b>Date   :20260520</b></p>"
 			"<hr>"
 			"<p>一款海量工程审查意见的高效剥离、知识库沉淀的工具。</p>"
 		);
@@ -178,7 +179,7 @@ OpinionViewer::OpinionViewer(QWidget* parent) : baseWindow(parent) {
 	ui.tableView->setWordWrap(true);
 	ui.tableView->setTextElideMode(Qt::ElideRight);
 	ui.tableView->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-	ui.tableView->verticalHeader()->setDefaultSectionSize(38);
+	ui.tableView->verticalHeader()->setDefaultSectionSize(42);
 	ui.tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
 	ui.tableView->horizontalHeader()->setStretchLastSection(true);
 
@@ -377,15 +378,33 @@ void OpinionViewer::onBtnExportClicked()
 // 🚀 多线程提交流水线
 // =========================================================================================
 void OpinionViewer::dragEnterEvent(QDragEnterEvent* event) { if (event->mimeData()->hasUrls()) event->acceptProposedAction(); }
+
 void OpinionViewer::dropEvent(QDropEvent* event) {
 	QStringList droppedPaths;
-	for (const QUrl& url : event->mimeData()->urls()) { if (url.isLocalFile()) droppedPaths.append(url.toLocalFile()); }
-	if (!droppedPaths.isEmpty()) startExtractionThread(collectFilesFromPaths(droppedPaths), droppedPaths.first());
+	for (const QUrl& url : event->mimeData()->urls()) {
+		if (url.isLocalFile()) droppedPaths.append(url.toLocalFile());
+	}
+
+	if (!droppedPaths.isEmpty()) {
+		// 🚀 【新增记忆装甲】：智能抓取默认扫描文件夹
+		QString firstPath = droppedPaths.first();
+		QFileInfo fi(firstPath);
+
+		// 如果拖进来的是文件，取它所在的文件夹路径；如果是文件夹，直接用它
+		QString defaultDir = fi.isDir() ? firstPath : fi.absolutePath();
+
+		updateDefaultScanPathInIni(defaultDir);
+
+		// 🚀 保持你原有的硬核多线程提取逻辑纹丝不动
+		startExtractionThread(collectFilesFromPaths(droppedPaths), firstPath);
+	}
 }
+
 void OpinionViewer::onSelectFiles() {
 	QStringList files = QFileDialog::getOpenFileNames(this, "选择审查文件", "", "所有支持格式 (*.docx *.doc *.xlsx *.xls *.txt)");
 	if (!files.isEmpty()) startExtractionThread(collectFilesFromPaths(files), files.first());
 }
+
 void OpinionViewer::onSelectFolder() {
 	QString dir = QFileDialog::getExistingDirectory(this, "选择包含审查文档的文件夹");
 	if (!dir.isEmpty()) startExtractionThread(collectFilesFromPaths(QStringList() << dir), dir);
@@ -517,4 +536,46 @@ void OpinionViewer::startExtractionThread(const std::vector<std::wstring>& backe
 		});
 
 	watcher->setFuture(future);
+}
+
+void OpinionViewer::updateDefaultScanPathInIni(const QString& newPath)
+{
+	// 1. 读文件：把所有行原封不动灌进 QStringList
+	QFile file("setting.ini");
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+		return;
+	}
+
+	QStringList lines;
+	QTextStream in(&file);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+	in.setCodec("UTF-8"); // Qt5 兼容
+#else
+	in.setEncoding(QStringConverter::Utf8); // Qt6 标准
+#endif
+
+	while (!in.atEnd()) {
+		lines.append(in.readLine());
+	}
+	file.close();
+
+	// 2. 写文件：精准狙击目标行，其余行原样吐回
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+		return;
+	}
+
+	QTextStream out(&file);
+	out.setEncoding(QStringConverter::Utf8);
+	out.setGenerateByteOrderMark(true); // 🚀 核心防线：写入 UTF-8 BOM 头，捍卫底层纯 C++ 引擎的尊严
+
+	for (const QString& line : lines) {
+		// 过滤掉首尾空白后判断，防止前面有空格干扰
+		if (line.trimmed().startsWith("DefaultScanPath=")) {
+			out << "DefaultScanPath=" << newPath << "\n";
+		}
+		else {
+			out << line << "\n";
+		}
+	}
+	file.close();
 }
