@@ -12,7 +12,7 @@
 
 ---
 
-这是一个专为处理复杂、非结构化文档（Word / Excel）设计的审查意见智能提取工具。针对海量文件、含有格式污染（支持doc、docx、xls、xlsx、txt格式）。
+这是一个专为处理复杂、非结构化文档（Word / Excel）设计的审查意见智能提取工具。针对海量文件（支持doc、docx、xls、xlsx、txt格式）。
 
 ### 📸 运行效果 (Preview)
 <p align="center">
