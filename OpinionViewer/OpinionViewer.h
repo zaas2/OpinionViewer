@@ -42,11 +42,10 @@ protected:
 	void dropEvent(QDropEvent* event) override;
 
 private:
-	// 🚀 辅助函数：将路径转为文件数组
 	std::vector<std::wstring> collectFilesFromPaths(const QList<QString>& paths);
 
-	// 🚀 辅助函数：启动纯净的多线程兵团作战
 	void startExtractionThread(const std::vector<std::wstring>& backendPaths, const QString& displayPath);
+	void updateDefaultScanPathInIni(const QString& newPath);
 
 private:
 	Ui::OpinionViewer ui;

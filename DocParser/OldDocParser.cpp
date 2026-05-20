@@ -135,7 +135,7 @@ bool OldDocParser::exportToWordDoc(
 		<< "th, td { border: 1px solid #000; padding: 8px; text-align: left; vertical-align: top; }"
 		<< "th { background-color: #f2f2f2; font-weight: bold; }"
 		<< "</style></head><body>"
-		<< "<h2>审查意见汇总表</h2>"
+		<< "<h2>" << StrUtil::wstring_to_utf8(L"审查意见汇总表") << "</h2>"
 		<< "<table><tr>";
 
 	// 动态写入表头

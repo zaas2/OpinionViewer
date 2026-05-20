@@ -73,9 +73,7 @@ public:
 			delete child;
 		}
 
-		// 🚀 2. 【核心装甲】：给悬浮窗设定一个“最大物理物理宽度”（比如 500 像素）
-		// 没有这个最大宽度，哪怕开启了 wordWrap，系统也不知道该在多宽的地方把文字折断！
-		m_container->setMaximumWidth(500);
+		m_container->setFixedWidth(600);
 
 		for (const auto& pair : items)
 		{
@@ -85,7 +83,6 @@ public:
 			hLayout->setContentsMargins(0, 0, 0, 0);
 			hLayout->setSpacing(8); // 框和字的间距
 
-			// 只有框，不要字
 			QCheckBox* cb = new QCheckBox(itemWidget);
 			cb->setChecked(pair.second);
 			cb->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -93,14 +90,19 @@ public:
 			cb->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 			hLayout->setAlignment(cb, Qt::AlignTop);
 
-			// 🚀 3. 【换行真神】：把文字交给 QLabel，并开启自动换行
 			QLabel* textLabel = new QLabel(pair.first, itemWidget);
 			textLabel->setWordWrap(true);
 			textLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 			textLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
 
+			QFont font = textLabel->font();
+			font.setFamily("Microsoft YaHei");
+			font.setStyleStrategy(QFont::PreferAntialias);
+			font.setPointSize(10);
+
+			textLabel->setFont(font);
 			// 继承你之前的暗黑风文字颜色
-			textLabel->setStyleSheet("color: #E0E0E0; line-height: 1.5;");
+			textLabel->setStyleSheet("color: #E0E0E0;");
 
 			hLayout->addWidget(cb);
 			hLayout->addWidget(textLabel);
