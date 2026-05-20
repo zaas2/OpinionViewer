@@ -1,3 +1,6 @@
 **/*.cpp linguist-language=C++
 **/*.h linguist-language=C++
 **/*.ui linguist-language=C++
+
+DbSearcher/sqlite3.c linguist-vendored
+DbSearcher/sqlite3.h linguist-vendored
