@@ -19,4 +19,6 @@ private:
 	static std::vector<std::wregex> m_regexFilters;
 	static std::wregex m_stripNumberingRegex;
 	static bool m_isConfigLoaded;
+	static std::wregex m_stripBuildingTailRegex;
+	static bool m_hasBuildingTailRegex;
 };

@@ -24,9 +24,7 @@ static std::wstring trim(const std::wstring& s) {
 	return s.substr(start, end - start + 1);
 }
 
-std::vector<ParsedDoc> OldDocParser::extractTextBatch(
-	const std::vector<std::wstring>& filePaths,
-	std::function<void(int, int, const std::wstring&)> progressCallback)
+std::vector<ParsedDoc> OldDocParser::extractTextBatch(const std::vector<std::wstring>& filePaths,std::function<void(int, int, const std::wstring&)> progressCallback)
 {
 	std::vector<ParsedDoc> allFiles;
 	if (filePaths.empty()) return allFiles;
@@ -107,7 +105,8 @@ std::vector<ParsedDoc> OldDocParser::extractTextBatch(
 	return allFiles;
 }
 
-std::vector<std::wstring> OldDocParser::extractText(const std::wstring& filePath) {
+std::vector<std::wstring> OldDocParser::extractText(const std::wstring& filePath)
+{
 	auto batchResult = extractTextBatch({ filePath }, nullptr);
 	if (!batchResult.empty()) {
 		return batchResult[0].lines;

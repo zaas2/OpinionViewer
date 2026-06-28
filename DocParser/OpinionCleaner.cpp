@@ -11,11 +11,17 @@ std::vector<std::wstring> OpinionCleaner::m_exactBlacklist;
 std::vector<std::wstring> OpinionCleaner::m_prefixBlacklist;
 std::vector<std::wregex> OpinionCleaner::m_regexFilters;
 std::wregex OpinionCleaner::m_stripNumberingRegex;
+
+// 🚀 新增：楼号尾巴清洗专员初始化
+std::wregex OpinionCleaner::m_stripBuildingTailRegex;
+bool OpinionCleaner::m_hasBuildingTailRegex = false;
+
 bool OpinionCleaner::m_isConfigLoaded = false;
 
 void OpinionCleaner::loadConfig(const std::wstring& iniPath) {
 	// 默认规则（注意 C++ 代码里的双斜杠是没问题的，因为编译器会转义）
 	m_stripNumberingRegex.assign(L"^\\s*([A-Za-z]+\\d+|\\d+)[\\.\\u3001\\:\\uff1a]\\s*(?!\\d)");
+	m_hasBuildingTailRegex = false; // 重置状态
 
 	std::ifstream file(iniPath);
 	if (!file.is_open()) {
@@ -52,7 +58,6 @@ void OpinionCleaner::loadConfig(const std::wstring& iniPath) {
 			}
 
 			// 🛡️ 核心修复 2：将 INI 中为了防转义写的双斜杠 `\\`，还原回 `\` 给 wregex 使用
-			// 因为 std::ifstream 读到的 `\\s` 就是字面意义的两个字符 '\' 和 's'
 			size_t pos = 0;
 			while ((pos = value.find(L"\\\\", pos)) != std::wstring::npos) {
 				value.replace(pos, 2, L"\\");
@@ -64,6 +69,17 @@ void OpinionCleaner::loadConfig(const std::wstring& iniPath) {
 			}
 			else if (currentGroup == L"OpinionFormat" && key == L"StripNumberingRegex") {
 				m_stripNumberingRegex.assign(value);
+			}
+			// 🚀 核心新增：加载剥离楼号的正则表达式
+			else if (currentGroup == L"OpinionFormat" && key == L"StripBuildingTailRegex") {
+				try {
+					m_stripBuildingTailRegex.assign(value);
+					m_hasBuildingTailRegex = true;
+				}
+				catch (const std::regex_error& e) {
+					std::wcerr << L"❌ 致命错误：楼号剥离正则解析失败 [" << key << L"] = " << value
+						<< L"\n   原因: " << e.what() << std::endl;
+				}
 			}
 			else if (currentGroup == L"CleanRules" && key == L"ExactBlacklist") {
 				m_exactBlacklist = StrUtil::split(value, L'|');
@@ -121,7 +137,14 @@ ParsedDoc OpinionCleaner::clean(const ParsedDoc& rawDoc) {
 
 		if (line == L"合格" || line == L"合格。") continue;
 
+		// 1. 剥离前方的编号前缀 (例如 1. 、 Q1、 等)
 		line = std::regex_replace(line, m_stripNumberingRegex, L"");
+
+		// 🚀 2. 剥离末尾的楼号专属干扰项 (例如 （11#）)
+		if (m_hasBuildingTailRegex) {
+			line = std::regex_replace(line, m_stripBuildingTailRegex, L"");
+		}
+
 		line = StrUtil::trim(line);
 		if (line.empty()) continue;
 

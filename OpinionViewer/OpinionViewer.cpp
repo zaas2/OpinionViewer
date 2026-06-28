@@ -16,18 +16,19 @@
 #include <QFutureWatcher>
 #include <QProgressDialog>
 #include <QDirIterator>
-#include <QTimer>
 #include <QMenu>
 #include <QTextStream>
 #include <windows.h>
 #include <iostream>
 #include <QStringList>
+#include <QShortcut>
 
 #include "../DocParser/DocxParser.h"
 #include "../DocParser/OldDocParser.h"
 #include "../DocParser/ExcelParser.h"
 #include "../DocParser/TxtParser.h"
 #include "../DocParser/OpinionCleaner.h"
+#include "../common/FileUtil.h"
 
 // 界面图标与样式辅助函数
 QIcon createSettingsIcon() {
@@ -55,24 +56,24 @@ OpinionViewer::OpinionViewer(QWidget* parent) : baseWindow(parent) {
 	ui.setupUi(this);
 	loadStyleSheet();
 	setAcceptDrops(true);
-
 	setWindowIcon(QIcon(":/OpinionViewer/rc/chaxuan.png"));
 
-	QString dbPath = QCoreApplication::applicationDirPath() + "/opinions.db";
-	bool isDbFileExists = QFileInfo::exists(dbPath);
-	m_dbWorker.initDatabase(dbPath.toStdWString());
+	// 🚀 分而治之，各司其职
+	initWindowStyle();
+	initDatabaseWorker();
+	initTableViewAndModels();
+	setupConnections();
 
-	if (!isDbFileExists || m_dbWorker.getTotalCount() == 0) {
-		ui.btnUpdateDb->hide(); // 也可以用 setVisible(false);
-	}
-	else {
-		ui.btnUpdateDb->show();
-	}
+	// 延迟闪电检索
+	QTimer::singleShot(50, this, &OpinionViewer::performSearch);
+}
 
-	// 视窗样式设定
+void OpinionViewer::initWindowStyle()
+{
 	setAttribute(Qt::WA_TranslucentBackground);
 	setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowMinimizeButtonHint | Qt::WindowCloseButtonHint);
 
+	// 窗口阴影
 	QGraphicsDropShadowEffect* shadowEffect = new QGraphicsDropShadowEffect(this);
 	shadowEffect->setOffset(0, 0);
 	shadowEffect->setColor(QColor(0, 0, 0, 160));
@@ -80,47 +81,99 @@ OpinionViewer::OpinionViewer(QWidget* parent) : baseWindow(parent) {
 	ui.widgetBg->setGraphicsEffect(shadowEffect);
 
 	ui.btnSettings->setIcon(createSettingsIcon());
-	QMenu* settingsMenu = new QMenu(this);
-	settingsMenu->setStyleSheet(
-		"QMenu { background-color: #252526; color: #D4D4D4; border: 1px solid #3F3F46; padding: 4px; }"
-		"QMenu::item { padding: 6px 20px; }"
-		"QMenu::item:selected { background-color: #04395E; color: white; }"
-	);
-
-	QAction* actEditRules = new QAction("编辑过滤规则", this);
-	QAction* actAbout = new QAction("关于...", this);
-	settingsMenu->addAction(actEditRules);
-	settingsMenu->addAction(actAbout);
-
-	connect(ui.btnSettings, &QPushButton::clicked, this, [this, settingsMenu]() {
-		settingsMenu->exec(ui.btnSettings->mapToGlobal(QPoint(0, ui.btnSettings->height())));
-		});
-
-	connect(actEditRules, &QAction::triggered, this, [this]() {
-		QString iniPath = QCoreApplication::applicationDirPath() + "/setting.ini";
-		if (!QFileInfo::exists(iniPath)) {
-			// 贴心防护：如果没有配置文件，自动生成一个标准模板并打开
-			QFile file(iniPath);
-			if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-				file.write("[OpinionFormat]\nStripNumberingRegex=^\\\\s*([A-Za-z]+\\\\d+|\\\\d+)[\\\\.\\\\u3001\\\\:\\\\uff1a]\\\\s*(?!\\\\d)\n\n[CleanRules]\nExactBlacklist=合格|无\nPrefixBlacklist=\n");
-				file.close();
-			}
-		}
-		QDesktopServices::openUrl(QUrl::fromLocalFile(iniPath));
-		});
-
-	connect(actAbout, &QAction::triggered, this, [this]() {
-		QMessageBox::about(this, "关于",
-			"<h2>施工图审查意见管理工具 V1.0</h2>"
-			"<p><b>Code by:    zaas</b></p>"
-			"<p><b>Date   :20260520</b></p>"
-			"<hr>"
-			"<p>一款海量工程审查意见的高效剥离、知识库沉淀的工具。</p>"
-		);
-		});
-
 	ui.btnSettings->raise(); ui.btnMin->raise(); ui.btnMax->raise(); ui.btnClose->raise();
 
+	ui.pageImport->setStyleSheet(
+		"QWidget#pageImport {"
+		"  border: 2px solid #E6A23C;"
+		"  border-radius: 6px;"
+		"  background-color: rgba(230, 162, 60, 0.05);"
+		"}"
+	);
+
+	// 默认显示历史库
+	ui.stackedWidget->setCurrentIndex(0);
+}
+
+void OpinionViewer::initDatabaseWorker()
+{
+	QString dbPath = QCoreApplication::applicationDirPath() + "/opinions.db";
+	bool isDbFileExists = QFileInfo::exists(dbPath);
+	m_dbWorker.initDatabase(dbPath.toStdWString());
+
+	if (!isDbFileExists || m_dbWorker.getTotalCount() == 0) {
+		ui.btnUpdateDb->hide();
+	}
+	else {
+		ui.btnUpdateDb->show();
+	}
+}
+
+void OpinionViewer::initTableViewAndModels()
+{
+	auto setupTableStyle = [](QTableView* tv) {
+		tv->setSelectionMode(QAbstractItemView::ExtendedSelection);
+		tv->setSelectionBehavior(QAbstractItemView::SelectRows);
+		tv->setFont(QFont("Microsoft YaHei", 10));
+		tv->setWordWrap(true);
+		tv->setTextElideMode(Qt::ElideRight);
+		tv->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+		tv->verticalHeader()->setDefaultSectionSize(42);
+		tv->verticalHeader()->setVisible(false);
+		tv->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+		};
+
+	setupTableStyle(ui.tableViewDB);
+	setupTableStyle(ui.tableViewImport);
+
+	QStringList headers = { "意见内容", "意见回复", "提取来源", "文件指纹" };
+
+	// ================= A套：历史库模型 =================
+	m_dbModel = new MyTableModel(this);
+	m_dbModel->setHeaders(headers);
+
+	m_dbProxyModel = new QSortFilterProxyModel(this);
+	m_dbProxyModel->setSourceModel(m_dbModel);
+	m_dbProxyModel->setFilterKeyColumn(0);
+	m_dbProxyModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
+	ui.tableViewDB->setModel(m_dbProxyModel);
+
+	QHeaderView* pHeaderDB = ui.tableViewDB->horizontalHeader();
+	pHeaderDB->setStretchLastSection(false);
+	pHeaderDB->setSectionResizeMode(0, QHeaderView::Stretch);
+	pHeaderDB->setSectionResizeMode(1, QHeaderView::Interactive);
+	pHeaderDB->setSectionResizeMode(2, QHeaderView::Interactive);
+	pHeaderDB->setSectionResizeMode(3, QHeaderView::Fixed);
+	ui.tableViewDB->setColumnWidth(1, 150);
+	ui.tableViewDB->setColumnWidth(2, 120);
+	ui.tableViewDB->setColumnHidden(3, true);
+
+	// ================= B套：沙盒加工模型 =================
+	m_importModel = new MyTableModel(this);
+	m_importModel->setHeaders(headers);
+
+	m_importProxyModel = new QSortFilterProxyModel(this);
+	m_importProxyModel->setSourceModel(m_importModel);
+	m_importProxyModel->setFilterKeyColumn(0);
+	m_importProxyModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
+	ui.tableViewImport->setModel(m_importProxyModel);
+
+	QHeaderView* pHeaderImport = ui.tableViewImport->horizontalHeader();
+	pHeaderImport->setStretchLastSection(false);
+	pHeaderImport->setSectionResizeMode(0, QHeaderView::Stretch);
+	pHeaderImport->setSectionResizeMode(1, QHeaderView::Interactive);
+	pHeaderImport->setSectionResizeMode(2, QHeaderView::Interactive);
+	pHeaderImport->setSectionResizeMode(3, QHeaderView::Fixed);
+	ui.tableViewImport->setColumnWidth(1, 150);
+	ui.tableViewImport->setColumnWidth(2, 120);
+	ui.tableViewImport->setColumnHidden(3, true);
+}
+
+void OpinionViewer::setupConnections()
+{
+	// ==============================================================
+	// 1. 基础标题栏控制
+	// ==============================================================
 	connect(ui.btnMin, &QPushButton::clicked, this, &QWidget::showMinimized);
 	connect(ui.btnClose, &QPushButton::clicked, this, &baseWindow::onButtonCloseClicked);
 	connect(ui.btnMax, &QPushButton::clicked, this, [this]() {
@@ -138,208 +191,356 @@ OpinionViewer::OpinionViewer(QWidget* parent) : baseWindow(parent) {
 		}
 		});
 
-	// 🚀 绑定全量更新按钮
-	connect(ui.btnUpdateDb, &QPushButton::clicked, this, [this]() {
-		if (!m_proxyModel || !m_model) return;
-		int rowCount = m_proxyModel->rowCount();
+	// ==============================================================
+	// 2. 齿轮设置与关于菜单
+	// ==============================================================
+	QMenu* settingsMenu = new QMenu(this);
+	settingsMenu->setStyleSheet("QMenu { background-color: #252526; color: #D4D4D4; border: 1px solid #3F3F46; padding: 4px; } QMenu::item { padding: 6px 20px; } QMenu::item:selected { background-color: #04395E; color: white; }");
+	QAction* actEditRules = new QAction("编辑过滤规则", this);
+	QAction* actAbout = new QAction("关于...", this);
+	settingsMenu->addAction(actEditRules);
+	settingsMenu->addAction(actAbout);
 
-		if (QMessageBox::question(this, "全量同步",
-			QString("即将用当前表格中的 %1 条数据【全量覆盖】本地知识库。\n这将会抹除数据库中原本存在、但当前被你删除或过滤掉的数据，是否继续？").arg(rowCount)) == QMessageBox::No) {
-			return;
-		}
+	connect(ui.btnSettings, &QPushButton::clicked, this, [this, settingsMenu]() { settingsMenu->exec(ui.btnSettings->mapToGlobal(QPoint(0, ui.btnSettings->height()))); });
 
-		std::vector<OpinionRecord> recordsToSync;
-		recordsToSync.reserve(rowCount);
-
-		for (int i = 0; i < rowCount; ++i) {
-			QString content = m_proxyModel->data(m_proxyModel->index(i, 0)).toString().trimmed();
-			QString source = m_proxyModel->data(m_proxyModel->index(i, 2)).toString().trimmed();
-			if (!content.isEmpty()) {
-				OpinionRecord record;
-				record.content = content.toStdWString();
-				record.source = source.toStdWString();
-				recordsToSync.push_back(record);
-			}
-		}
-
-		// 直接呼叫底层放核弹
-		if (m_dbWorker.overwriteOpinions(recordsToSync)) {
-			QMessageBox::information(this, "同步成功", QString("极速全量同步完成！库中现存 %1 条意见。").arg(recordsToSync.size()));
-			ui.lineEditSearch->setPlaceholderText(QString("全库同步完成：当前库中共 %1 条意见...").arg(recordsToSync.size()));
-		}
-		else {
-			QMessageBox::critical(this, "致命错误", "全量覆盖失败！请检查数据库状态！");
-		}
+	connect(actEditRules, &QAction::triggered, this, [this]() {
+		QString iniPath = QCoreApplication::applicationDirPath() + "/setting.ini";
+		QDesktopServices::openUrl(QUrl::fromLocalFile(iniPath));
 		});
 
-	// 表格与模型设定
-	ui.tableView->setSelectionMode(QAbstractItemView::ExtendedSelection);
-	ui.tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
-	ui.tableView->setFont(QFont("Microsoft YaHei", 10));
-	ui.tableView->setWordWrap(true);
-	ui.tableView->setTextElideMode(Qt::ElideRight);
-	ui.tableView->verticalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-	ui.tableView->verticalHeader()->setDefaultSectionSize(42);
-	ui.tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-	ui.tableView->horizontalHeader()->setStretchLastSection(true);
+	connect(actAbout, &QAction::triggered, this, [this]() {
+		QMessageBox::about(this, "关于",
+			"<h2>施工图审查意见管理工具 V1.2</h2>"
+			"<p><b>Code by:    zaas</b></p>"
+			"<p><b>Date   :20260618</b></p>"
+			"<hr>"
+			"<p>一款海量工程审查意见的高效剥离、知识库沉淀的工具。</p>"
+		);
+		});
 
-	m_model = new MyTableModel(this);
-	m_model->setHeaders({ "意见内容", "意见回复", "提取来源" });
+	// ==============================================================
+	// 3. 全局核心按钮 (导出、重设库、沙盒入库与清空)
+	// ==============================================================
+	connect(ui.btnUpdateDb, &QPushButton::clicked, this, &OpinionViewer::onBtnResetDatabaseClicked);
+	connect(ui.btnExport, &QPushButton::clicked, this, &OpinionViewer::onBtnExportClicked);
+	connect(ui.btnImport, &QPushButton::clicked, this, &OpinionViewer::onBtnImportClicked);
 
-	m_proxyModel = new QSortFilterProxyModel(this);
-	m_proxyModel->setSourceModel(m_model);
-	m_proxyModel->setFilterKeyColumn(0);
-	m_proxyModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
-	ui.tableView->setModel(m_proxyModel);
+	connect(ui.btnCancelImport, &QPushButton::clicked, this, [this]() {
+		m_importModel->setDataList(QVector<MyTableModel::Row>());
+		ui.stackedWidget->setCurrentIndex(0);
+		});
 
-	QHeaderView* pHeader = ui.tableView->horizontalHeader();
-	pHeader->setStretchLastSection(false);
-	pHeader->setSectionResizeMode(0, QHeaderView::Stretch);
-	pHeader->setSectionResizeMode(1, QHeaderView::Interactive);
-	pHeader->setSectionResizeMode(2, QHeaderView::Interactive);
-
-	ui.tableView->setColumnWidth(1, 150); // 1列回复：只留小部分写备注
-	ui.tableView->setColumnWidth(2, 120); // 2列来源：极限压缩，只够看个后缀和文件尾巴
-
-	// 菜单与操作连接
+	// ==============================================================
+	// 4. 指定来源下拉菜单
+	// ==============================================================
 	QMenu* browseMenu = new QMenu(this);
 	browseMenu->setStyleSheet("QMenu { background-color: #252526; color: #D4D4D4; border: 1px solid #3F3F46; padding: 4px; } QMenu::item { padding: 6px 20px; } QMenu::item:selected { background-color: #04395E; color: white; }");
-
 	QAction* actionFiles = new QAction("选择审查文件", this);
 	QAction* actionFolder = new QAction("选择审查意见所在的文件夹", this);
-
 	browseMenu->addAction(actionFiles);
 	browseMenu->addAction(actionFolder);
 	ui.btnBrowse->setMenu(browseMenu);
 	ui.btnBrowse->setText("指定来源 ▾");
-
 	connect(actionFiles, &QAction::triggered, this, &OpinionViewer::onSelectFiles);
 	connect(actionFolder, &QAction::triggered, this, &OpinionViewer::onSelectFolder);
 	connect(ui.btnBrowse, &QPushButton::clicked, this, &OpinionViewer::onSelectFiles);
-	connect(ui.btnExport, &QPushButton::clicked, this, &OpinionViewer::onBtnExportClicked);
 
+	// ==============================================================
+	// 5. 双轨制检索与防抖
+	// ==============================================================
 	m_searchTimer = new QTimer(this);
 	m_searchTimer->setSingleShot(true);
 	m_searchTimer->setInterval(300);
 	connect(m_searchTimer, &QTimer::timeout, this, &OpinionViewer::performSearch);
-	connect(ui.lineEditSearch, &QLineEdit::textChanged, this, [this]() { if (m_searchTimer) m_searchTimer->start(); });
-	connect(ui.btnImport, &QPushButton::clicked, this, &OpinionViewer::onBtnImportClicked);
+	connect(ui.lineEditSearchDB, &QLineEdit::textChanged, this, [this]() { if (m_searchTimer) m_searchTimer->start(); });
 
-	QTimer::singleShot(50, this, &OpinionViewer::performSearch);
+	connect(ui.lineEditSearchImport, &QLineEdit::textChanged, this, [this](const QString& text) {
+		m_importProxyModel->setFilterWildcard("*" + text + "*");
+		});
+
+	// ==============================================================
+	// 6. 🚀 快捷键与核心业务提炼 (删除/撤销的终极闭环)
+	// ==============================================================
+
+	// [搜索快捷键]
+	QShortcut* shortcutSearch = new QShortcut(QKeySequence("Ctrl+F"), this);
+	connect(shortcutSearch, &QShortcut::activated, this, [this]() {
+		if (ui.stackedWidget->currentIndex() == 0) { ui.lineEditSearchDB->setFocus(); ui.lineEditSearchDB->selectAll(); }
+		else { ui.lineEditSearchImport->setFocus(); ui.lineEditSearchImport->selectAll(); }
+		});
+
+	// [撤销快捷键]
+	QShortcut* shortcutUndo = new QShortcut(QKeySequence("Ctrl+Z"), this);
+	connect(shortcutUndo, &QShortcut::activated, this, &OpinionViewer::onUndoTriggered);
+
+	// 💡 [提炼核心逻辑]：统一处理物理删库、内存弹栈、UI刷新的闭包
+	auto performBusinessDelete = [this](MyTableView* tableView, int mode) {
+		QList<QStringList> deletedRows = tableView->executeDelete();
+		if (deletedRows.isEmpty()) return;
+
+		std::vector<OpinionRecord> recordsToUndo;
+		std::vector<std::wstring> contentsToDelete; // 🚀 新增：收集死亡名单
+
+		recordsToUndo.reserve(deletedRows.size());
+		contentsToDelete.reserve(deletedRows.size());
+
+		for (const auto& row : deletedRows) {
+			if (row.size() < 4) continue;
+			OpinionRecord rec;
+			rec.content = row[0].toStdWString();
+			rec.reply = row[1].toStdWString();
+			rec.source = row[2].toStdWString();
+			rec.fileHash = row[3].toStdWString();
+			recordsToUndo.push_back(rec);
+
+			// 把要删的 content 收集起来
+			if (mode == 0) {
+				contentsToDelete.push_back(rec.content);
+			}
+		}
+
+		// 🚀 核心性能跨越：将循环里的单条删除，改为一次性批量斩杀！
+		if (mode == 0 && !contentsToDelete.empty()) {
+			m_dbWorker.batchDeleteOpinionsByContent(contentsToDelete);
+		}
+
+		// 压入撤销栈
+		m_undoStack.push({ mode, recordsToUndo });
+
+		// 刷新 UI 状态
+		if (mode == 0) {
+			if (ui.lineEditSearchDB->text().isEmpty()) {
+				ui.lineEditSearchDB->setPlaceholderText(QString("全库展现：当前共 %1 条意见，输入关键字极速过滤...").arg(m_dbWorker.getTotalCount()));
+			}
+			else {
+				ui.lineEditSearchDB->setPlaceholderText(QString("全局检索完成：为您搜出 %1 条相关意见...").arg(m_dbProxyModel->rowCount()));
+			}
+		}
+		};
+
+	// [删除快捷键]
+	QShortcut* shortcutDelete = new QShortcut(QKeySequence::Delete, this);
+	connect(shortcutDelete, &QShortcut::activated, this, [this, performBusinessDelete]() {
+		if (ui.stackedWidget->currentIndex() == 0) {
+			performBusinessDelete(ui.tableViewDB, 0);
+		}
+		else {
+			performBusinessDelete(ui.tableViewImport, 1);
+		}
+		});
+
+	// ==============================================================
+	// 7. 🚀 动态业务菜单注入 (剥离 View 与 Controller)
+	// ==============================================================
+	auto injectBusinessMenu = [this, performBusinessDelete](MyTableView* tableView, int mode) {
+		connect(tableView, &MyTableView::aboutToShowMenu, this, [this, tableView, mode, performBusinessDelete](QMenu* menu, const QModelIndex& /*index*/) {
+			if (!menu->isEmpty()) menu->addSeparator();
+
+			// 注入删除菜单
+			QAction* actDelete = menu->addAction("删除选中行 (Del)");
+			connect(actDelete, &QAction::triggered, this, [tableView, mode, performBusinessDelete]() {
+				performBusinessDelete(tableView, mode);
+				});
+
+			// 注入撤销菜单 (附带状态感知)
+			QAction* actUndo = menu->addAction("撤销删除 (Ctrl+Z)");
+			actUndo->setEnabled(!m_undoStack.empty());
+			connect(actUndo, &QAction::triggered, this, &OpinionViewer::onUndoTriggered);
+			});
+		};
+
+	// 挂载动态菜单
+	injectBusinessMenu(ui.tableViewDB, 0);
+	injectBusinessMenu(ui.tableViewImport, 1);
 }
 
 OpinionViewer::~OpinionViewer() {}
 
-// =========================================================================================
-// 🚀 检索与展示核心
-// =========================================================================================
 void OpinionViewer::performSearch()
 {
-	if (!m_proxyModel || !m_model || !ui.lineEditSearch) return;
+	// 1. 保护性检查：只认历史库的 Model 和 搜索框
+	if (!m_dbModel || !m_dbProxyModel || !ui.lineEditSearchDB) return;
 
-	QString text = ui.lineEditSearch->text().trimmed();
-	bool isPreviewMode = !ui.lineEditPath->text().isEmpty();
+	// 2. 拿到关键字
+	QString text = ui.lineEditSearchDB->text().trimmed();
 
-	if (isPreviewMode) {
-		m_proxyModel->setFilterFixedString(text);
-		int total = m_model->rowCount();
-		int visible = m_proxyModel->rowCount();
-		ui.lineEditSearch->setPlaceholderText(text.isEmpty() ? QString("智能提取完成：共洗出 %1 条意见，可输入关键字过滤...").arg(total) : QString("内存过滤中：当前匹配到 %1 / %2 条意见...").arg(visible).arg(total));
-		//已彻底铲除 ui.tableView->resizeRowsToContents(); 
+	// 3. 呼叫底层工人，去 SQLite 库里捞数据（底层已被净化，只搜内容）
+	std::vector<OpinionRecord> dbResults = m_dbWorker.searchOpinions(text.toStdWString());
+
+	// 4. 将真实数据转换成表格能认的格式
+	QVector<MyTableModel::Row> searchRows;
+	searchRows.reserve(dbResults.size());
+
+	for (const auto& record : dbResults) {
+		MyTableModel::Row row;
+		row.cells.resize(4);
+		row.cells[0] = QString::fromStdWString(record.content);
+		row.cells[1] = QString::fromStdWString(record.reply);
+		row.cells[2] = QString::fromStdWString(record.source);
+		row.cells[3] = QString::fromStdWString(record.fileHash);
+		searchRows.append(row);
+	}
+
+	// 5. 一把梭倒进历史库真实模型
+	m_dbModel->setDataList(searchRows);
+
+	// 🚀 6. 视口防线：强行把代理模型的过滤列死死锁在第 0 列
+	m_dbProxyModel->setFilterKeyColumn(0);
+	m_dbProxyModel->setFilterFixedString("");
+
+	// 7. 动态更新搜索框提示文案
+	if (text.isEmpty()) {
+		ui.lineEditSearchDB->setPlaceholderText(QString("全库展现：当前共 %1 条意见，输入关键字极速过滤...").arg(m_dbWorker.getTotalCount()));
 	}
 	else {
-		m_proxyModel->setFilterFixedString("");
-		std::vector<OpinionRecord> dbResults = m_dbWorker.searchOpinions(text.toStdWString());
-
-		QVector<MyTableModel::Row> searchRows;
-		searchRows.reserve(dbResults.size());
-
-		for (const auto& record : dbResults) {
-			MyTableModel::Row row;
-			// 🚀 装甲升级：强行锁死大小为 3，拒绝底层动态扩容带来的内存碎片爆炸！
-			row.cells.resize(3);
-			row.cells[0] = QString::fromStdWString(record.content);
-			row.cells[1] = "";
-			row.cells[2] = QString::fromStdWString(record.source);
-			searchRows.append(row);
-		}
-
-		m_model->setDataList(searchRows);
-		ui.lineEditSearch->setPlaceholderText(text.isEmpty() ? QString("全库展现：当前共 %1 条意见，输入关键字闪电检索...").arg(searchRows.size()) : QString("全局检索完成：为您搜出 %1 条相关意见...").arg(searchRows.size()));
+		ui.lineEditSearchDB->setPlaceholderText(QString("全局检索完成：为您搜出 %1 条相关意见...").arg(searchRows.size()));
 	}
 }
 
-// =========================================================================================
-// 🚀 入库逻辑
-// =========================================================================================
 void OpinionViewer::onBtnImportClicked()
 {
-	// 🚀 彻底重构判定：不管路径框有没有字，只要当前前端表格里有数据，就说明有待入库的意见，直接放行！
-	if (!m_proxyModel || !m_model) return;
-	int rowCount = m_proxyModel->rowCount();
+	// 1. 锁定按钮，防止重复点击
+	ui.btnImport->setEnabled(false);
 
+	// 🚀 核心纠偏：现在数据全在沙盒代理模型里
+	if (!m_importProxyModel || !m_importModel) {
+		ui.btnImport->setEnabled(true);
+		return;
+	}
+
+	// 🚀 核心纠偏：从沙盒中获取过滤/清洗后剩余的行数
+	int rowCount = m_importProxyModel->rowCount();
 	if (rowCount == 0) {
-		QMessageBox::warning(this, "提示", "当前表格中没有任何可见的有效意见，无法执行入库！");
+		QMessageBox::warning(this, "提示", "当前表格中没有有效意见，无法执行入库！");
+		ui.btnImport->setEnabled(true);
 		return;
 	}
 
-	// 2. 二次确认防手抖
-	QMessageBox::StandardButton reply;
-	reply = QMessageBox::question(this, "准备入库",
-		QString("即将把当前的 %1 条意见（包含可能重复的历史意见）沉淀至本地知识库。\n底层将自动执行增量去重，是否继续？").arg(rowCount),
-		QMessageBox::Yes | QMessageBox::No);
-	if (reply == QMessageBox::No) return;
+	// 2. 二次确认入库操作（文案完美保留）
+	if (QMessageBox::question(this, "准备入库",
+		QString("即将把当前的 %1 条意见沉淀至本地知识库。\n底层将自动执行指纹核对与增量去重，是否继续？").arg(rowCount),
+		QMessageBox::Yes | QMessageBox::No) == QMessageBox::No) {
+		ui.btnImport->setEnabled(true);
+		return;
+	}
 
-	// 3. 剥离数据准备输送给 DbWorker
-	// 🚀 核心修正：用回我们清爽的 OpinionRecord 结构体，彻底抛弃 std::pair！
+	// 3. 呼叫辅助函数，剥离并清洗底层数据
 	std::vector<OpinionRecord> recordsToInsert;
-	recordsToInsert.reserve(rowCount);
+	std::vector<FileMetaData> metaDataToInsert;
 
-	for (int i = 0; i < rowCount; ++i) {
-		// 确保从当前的代理视图中提取最新的、没被删除的干净数据
-		QModelIndex proxyIndex0 = m_proxyModel->index(i, 0);
-		QModelIndex proxyIndex2 = m_proxyModel->index(i, 2);
-
-		QString content = m_proxyModel->data(proxyIndex0, Qt::DisplayRole).toString().trimmed();
-		QString source = m_proxyModel->data(proxyIndex2, Qt::DisplayRole).toString().trimmed();
-
-		if (!content.isEmpty()) {
-			OpinionRecord record;
-			record.content = content.toStdWString();
-			record.source = source.toStdWString();
-			recordsToInsert.push_back(record);
-		}
-	}
-
-	if (recordsToInsert.empty()) {
+	// 💡 提醒：你的 extractImportData 内部也要同步改为读取 m_importProxyModel
+	if (!extractImportData(recordsToInsert, metaDataToInsert)) {
 		QMessageBox::warning(this, "提示", "过滤后的有效入库数据为空，放弃入库！");
+		ui.btnImport->setEnabled(true);
 		return;
 	}
 
-	// 4. 调用底层 SQLite 工人执行盲录增量入库
+	// 4. 调用底层 SQLite 工人执行入库
+	m_dbWorker.beginTransaction();
+
+	// 先写主表 (这些循环现在全部在内存中瞬间执行)
+	for (const auto& meta : metaDataToInsert) {
+		m_dbWorker.insertFileMetaData(meta);
+	}
+
+	// 再写从表 (把车上的意见货物挂靠上去)
 	bool success = m_dbWorker.batchInsertOpinions(recordsToInsert);
 
 	if (success) {
-		QMessageBox::information(this, "入库成功", QString("%1 条意见已顺利通过去重并沉淀至本地知识库！").arg(recordsToInsert.size()));
+		// 🚀🚀🚀 统一落盘：几万条数据一次性刷入硬盘，瞬间膨胀完成！
+		m_dbWorker.commitTransaction();
 
-		// 🚀 状态重置：清空路径框，平滑切换回历史库检索状态
-		ui.lineEditPath->clear();
-		ui.lineEditSearch->clear();
+		QMessageBox::information(this, "入库成功", QString("共计 %1 条意见已顺利入库。").arg(recordsToInsert.size()));
+
+		// ================= 🚀 v1.2 宇宙闭环逻辑 =================
+		// 1. 清空沙盒加工区的数据，防止脏数据滞留
+		m_importModel->setDataList(QVector<MyTableModel::Row>());
+		if (ui.lineEditSearchImport) {
+			ui.lineEditSearchImport->clear();
+		}
+
+		// 2. 功成身退：退掉橙色结界，自动丝滑切回主页历史库
+		ui.stackedWidget->setCurrentIndex(0);
+
+		// 3. 强制回读刷新：让主页历史库立马去加载刚写进去的最新真理数据
+		refreshTableView();
+
+		// 让重设库按钮亮起来
 		ui.btnUpdateDb->show();
-		performSearch();
 	}
 	else {
-		QMessageBox::critical(this, "致命错误", "入库失败！请检查数据库文件是否被独占锁定！");
+		// 如果中间发生任何错误，直接撤销刚才的所有操作，保证数据库不被污染
+		m_dbWorker.rollbackTransaction();
+		QMessageBox::critical(this, "写入失败", "入库失败！请检查数据库文件状态。");
 	}
+
+	ui.btnImport->setEnabled(true);
+}
+
+bool OpinionViewer::extractImportData(std::vector<OpinionRecord>& outRecords, std::vector<FileMetaData>& outMetaData)
+{
+	// 🚀 核心防卫：确保沙盒模型存在
+	if (!m_importProxyModel) return false;
+
+	int rowCount = m_importProxyModel->rowCount();
+	if (rowCount == 0) return false;
+
+	outRecords.reserve(rowCount);
+	std::unordered_set<std::wstring> seenHashes;
+
+	for (int i = 0; i < rowCount; ++i) {
+		// 🚀 核心纠偏：全部从 m_importProxyModel 提取数据
+		QModelIndex indexContent = m_importProxyModel->index(i, 0);
+		QModelIndex indexReply = m_importProxyModel->index(i, 1);
+		QModelIndex indexSource = m_importProxyModel->index(i, 2);
+		QModelIndex indexHash = m_importProxyModel->index(i, 3);
+
+		OpinionRecord rec;
+		rec.content = m_importProxyModel->data(indexContent, Qt::DisplayRole).toString().trimmed().toStdWString();
+		rec.reply = m_importProxyModel->data(indexReply, Qt::DisplayRole).toString().trimmed().toStdWString();
+		rec.source = m_importProxyModel->data(indexSource, Qt::DisplayRole).toString().trimmed().toStdWString();
+		rec.fileHash = m_importProxyModel->data(indexHash, Qt::DisplayRole).toString().trimmed().toStdWString();
+
+		// 跳过数据无效或缺失关联指纹的记录
+		if (rec.content.empty() || rec.fileHash.empty()) continue;
+
+		outRecords.push_back(rec);
+
+		if (seenHashes.find(rec.fileHash) == seenHashes.end()) {
+			seenHashes.insert(rec.fileHash);
+
+			// 从扫描阶段生成的内存缓存中提取真实文件元数据
+			auto it = m_currentScanMetaCache.find(rec.source);
+			if (it != m_currentScanMetaCache.end()) {
+				outMetaData.push_back(it->second);
+			}
+		}
+	}
+
+	// 如果清洗后仍有有效数据，返回 true
+	return !outRecords.empty();
 }
 
 void OpinionViewer::onBtnExportClicked()
 {
-	if (!m_proxyModel || m_proxyModel->rowCount() == 0) {
+	// 🚀 1. 智能识别当前舞台，确定我们要压榨的数据源
+	QSortFilterProxyModel* currentProxy = nullptr;
+	int currentMode = ui.stackedWidget->currentIndex();
+
+	if (currentMode == 0) {
+		currentProxy = m_dbProxyModel;
+	}
+	else if (currentMode == 1) {
+		currentProxy = m_importProxyModel;
+	}
+
+	// 安全防卫
+	if (!currentProxy || currentProxy->rowCount() == 0) {
 		QMessageBox::warning(this, "提示", "当前表格为空，没有可导出的数据！");
 		return;
 	}
 
+	// 获取存储路径 (保持原汁原味)
 	QString savePath = QFileDialog::getSaveFileName(this, "导出到 Word", "", "Word 文档 (*.doc)");
 	if (savePath.isEmpty()) return;
 
@@ -350,20 +551,21 @@ void OpinionViewer::onBtnExportClicked()
 	// 1. 组装表头
 	std::vector<std::wstring> headers = { L"意见内容", L"意见回复", L"提取来源" };
 
-	// 2. 榨取数据矩阵
+	// 2. 🚀 从动态匹配的代理模型中榨取数据矩阵
 	std::vector<std::vector<std::wstring>> tableData;
-	int rowCount = m_proxyModel->rowCount();
+	int rowCount = currentProxy->rowCount();
 	tableData.reserve(rowCount);
 
 	for (int i = 0; i < rowCount; ++i) {
 		std::vector<std::wstring> rowCells;
-		rowCells.push_back(m_proxyModel->data(m_proxyModel->index(i, 0)).toString().toStdWString());
-		rowCells.push_back(m_proxyModel->data(m_proxyModel->index(i, 1)).toString().toStdWString());
-		rowCells.push_back(m_proxyModel->data(m_proxyModel->index(i, 2)).toString().toStdWString());
+		// 精准抓取当前视图下的前 3 列有效文本
+		rowCells.push_back(currentProxy->data(currentProxy->index(i, 0)).toString().toStdWString());
+		rowCells.push_back(currentProxy->data(currentProxy->index(i, 1)).toString().toStdWString());
+		rowCells.push_back(currentProxy->data(currentProxy->index(i, 2)).toString().toStdWString());
 		tableData.push_back(rowCells);
 	}
 
-	// 3. 呼叫底层纯 C++ 引擎落地成盒！
+	// 3. 呼叫底层纯 C++ 引擎落地成盒！(保持原汁原味)
 	bool success = OldDocParser::exportToWordDoc(savePath.toStdWString(), headers, tableData);
 
 	if (success) {
@@ -374,9 +576,40 @@ void OpinionViewer::onBtnExportClicked()
 	}
 }
 
-// =========================================================================================
-// 🚀 多线程提交流水线
-// =========================================================================================
+void OpinionViewer::onBtnResetDatabaseClicked()
+{
+	// 1. 🚀 终极防误触拦截：高危操作，默认选 No
+	if (QMessageBox::warning(this, "高危操作",
+		"⚠️ 警告：即将彻底抹除本地知识库中的【所有】审查意见！\n\n此操作不可逆！是否确认清空重置？",
+		QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::No)
+	{
+		return;
+	}
+
+	if (!m_dbWorker.clearDatabase()) {
+		QMessageBox::critical(this, "致命错误", "数据库清空失败！文件可能被占用，请重启软件后重试。");
+		return;
+	}
+
+	// 清空历史库表格内容
+	if (m_dbModel) {
+		m_dbModel->setDataList(QVector<MyTableModel::Row>());
+	}
+
+	// 清空搜索框文字并重置提示
+	if (ui.lineEditSearchDB) {
+		ui.lineEditSearchDB->clear();
+		ui.lineEditSearchDB->setPlaceholderText("全库展现：当前共 0 条意见，输入关键字极速过滤...");
+	}
+
+	// 既然库都炸平了，绝对不能允许用户按 Ctrl+Z 把刚才删掉的数据又塞回废墟里
+	while (!m_undoStack.empty()) {
+		m_undoStack.pop();
+	}
+
+	QMessageBox::information(this, "重置成功", "历史库已清空，所有数据已归零！\n现在您可以开始建立全新的知识库了。");
+}
+
 void OpinionViewer::dragEnterEvent(QDragEnterEvent* event) { if (event->mimeData()->hasUrls()) event->acceptProposedAction(); }
 
 void OpinionViewer::dropEvent(QDropEvent* event) {
@@ -386,18 +619,50 @@ void OpinionViewer::dropEvent(QDropEvent* event) {
 	}
 
 	if (!droppedPaths.isEmpty()) {
-		// 🚀 【新增记忆装甲】：智能抓取默认扫描文件夹
 		QString firstPath = droppedPaths.first();
 		QFileInfo fi(firstPath);
-
-		// 如果拖进来的是文件，取它所在的文件夹路径；如果是文件夹，直接用它
 		QString defaultDir = fi.isDir() ? firstPath : fi.absolutePath();
 
 		updateDefaultScanPathInIni(defaultDir);
-
-		// 🚀 保持你原有的硬核多线程提取逻辑纹丝不动
 		startExtractionThread(collectFilesFromPaths(droppedPaths), firstPath);
 	}
+}
+
+void OpinionViewer::onExtractionProgress(int current, int total, const QString& fileName, const QString& statusText)
+{
+	// 🚀 核心纠偏：更新主界面的搜索框状态
+	if (ui.lineEditSearchDB) {
+		ui.lineEditSearchDB->setPlaceholderText(QString("[%1] %2 (%3/%4)").arg(statusText).arg(fileName).arg(current).arg(total));
+	}
+}
+
+void OpinionViewer::onExtractionFinished(int parsedCount, int skippedCount, int movedCount, double costSeconds)
+{
+	QString report = QString(
+		"统计结果\n\n"
+		"✔️ 全新解析文件：%1 个\n"
+		"⏭️ 零秒跳过未改动：%2 个\n"
+		"🔄 静默修正已移动：%3 个\n\n"
+		"⏱️ 耗时：%4 秒"
+	).arg(parsedCount).arg(skippedCount).arg(movedCount).arg(costSeconds, 0, 'f', 2);
+
+	QMessageBox::information(this, "提取完成", report);
+}
+
+void OpinionViewer::refreshTableView()
+{
+	// 1. 恢复外围 UI 状态
+	ui.lineEditPath->clear();
+	ui.btnBrowse->setEnabled(true);
+
+	// 🚀 2. 核心纠偏：清理主搜索框，并确保界面处于 Page 0
+	ui.lineEditSearchDB->clear();
+	if (ui.stackedWidget->currentIndex() != 0) {
+		ui.stackedWidget->setCurrentIndex(0);
+	}
+
+	// 3. 触发底层全量查库并渲染
+	performSearch();
 }
 
 void OpinionViewer::onSelectFiles() {
@@ -425,8 +690,11 @@ std::vector<std::wstring> OpinionViewer::collectFilesFromPaths(const QList<QStri
 	return backendPaths;
 }
 
-void OpinionViewer::startExtractionThread(const std::vector<std::wstring>& backendPaths, const QString& displayPath)
+void OpinionViewer::startExtractionThread(const std::vector<std::wstring>& backendPaths, const QString& displayPath, bool isOverwriteMode)
 {
+	// 🚀 彻底干掉黑名单清空，直接初始化元数据缓存
+	m_currentScanMetaCache.clear();
+
 	if (backendPaths.empty()) {
 		QMessageBox::warning(this, "提示", "未能识别到任何有效的审查文档！");
 		return;
@@ -435,8 +703,9 @@ void OpinionViewer::startExtractionThread(const std::vector<std::wstring>& backe
 	ui.lineEditPath->setText(displayPath + (backendPaths.size() > 1 ? " (等多目标)" : ""));
 	ui.btnBrowse->setEnabled(false);
 
-	QProgressDialog* progressDlg = new QProgressDialog("正在启动底层全能解析引擎...", "取消", 0, static_cast<int>(backendPaths.size()), this);
-	progressDlg->setWindowTitle("审查意见提取中，请耐心等待");
+	// 1. 初始化进度条对话框 (保持原汁原味)
+	QProgressDialog* progressDlg = new QProgressDialog("正在启动指纹核对引擎...", "取消", 0, static_cast<int>(backendPaths.size()), this);
+	progressDlg->setWindowTitle(isOverwriteMode ? "强制全量重设中..." : "审查意见提取中...");
 	progressDlg->setWindowModality(Qt::WindowModal);
 	progressDlg->setMinimumDuration(0);
 	progressDlg->setValue(0);
@@ -447,93 +716,88 @@ void OpinionViewer::startExtractionThread(const std::vector<std::wstring>& backe
 	auto isCanceled = std::make_shared<std::atomic<bool>>(false);
 	connect(progressDlg, &QProgressDialog::canceled, this, [isCanceled]() { isCanceled->store(true); });
 
-	connect(this, &OpinionViewer::sigUpdateProgress, progressDlg, [progressDlg](int current, int total, const QString& fileName) {
+	connect(this, &OpinionViewer::sigUpdateProgress, progressDlg, [progressDlg](int current, int total, const QString& fileName, const QString& statusText) {
 		if (progressDlg->wasCanceled()) return;
 		if (current == total) {
-			progressDlg->setRange(0, 0); progressDlg->setLabelText("文档剥离完毕，正在进行数据装配，请稍候...");
+			progressDlg->setRange(0, 0); progressDlg->setLabelText("指纹核对完毕，正在装配数据队列，请稍候...");
 		}
 		else {
-			progressDlg->setLabelText(QString("正在解析: %1\n进度: %2 / %3").arg(fileName).arg(current).arg(total));
+			progressDlg->setLabelText(QString("%1\n文件: %2\n进度: %3 / %4").arg(statusText).arg(fileName).arg(current).arg(total));
 			progressDlg->setValue(current);
 		}
 		});
 
-	QElapsedTimer* stopWatch = new QElapsedTimer(); stopWatch->start();
-	auto* watcher = new QFutureWatcher<std::vector<OpinionRecord>>(this);
+	// 2. 配置异步监听与计时器
+	QElapsedTimer* stopWatch = new QElapsedTimer();
+	stopWatch->start();
+	auto* watcher = new QFutureWatcher<ExtractionResult>(this);
 
-	connect(watcher, &QFutureWatcher<std::vector<OpinionRecord>>::finished, this, [this, watcher, progressDlg, stopWatch, isCanceled]() {
+	// 3. 挂载线程完成后的 UI 收尾工作 (高潮降临)
+	connect(watcher, &QFutureWatcher<ExtractionResult>::finished, this, [this, watcher, progressDlg, stopWatch, isCanceled]() {
 		bool userCanceled = isCanceled->load();
-
 		progressDlg->close();
 		progressDlg->deleteLater();
 
-		if (userCanceled) { delete stopWatch; watcher->deleteLater(); ui.btnBrowse->setEnabled(true); return; }
+		if (userCanceled) {
+			delete stopWatch;
+			watcher->deleteLater();
+			ui.btnBrowse->setEnabled(true);
+			return;
+		}
 
-		auto cleanedData = watcher->result();
+		ExtractionResult extResult = watcher->result();
+
+		// 同步内存元数据，供后续入库使用
+		m_currentScanMetaCache = extResult.metaCache;
+
+		// 🚀 计算耗时
+		double costSeconds = stopWatch->elapsed() / 1000.0;
+		delete stopWatch;
+
+		// 🚀 核心纠偏：装载到专属沙盒预览表格 (4列架构)
 		QVector<MyTableModel::Row> previewRows;
-		previewRows.reserve(cleanedData.size());
+		previewRows.reserve(extResult.newRecords.size());
 
-		for (const auto& record : cleanedData) {
+		for (const auto& record : extResult.newRecords) {
 			MyTableModel::Row row;
-			row.cells.append(QString::fromStdWString(record.content));
-			row.cells.append("");
-			row.cells.append(QString::fromStdWString(record.source));
+			row.cells.resize(4);
+			row.cells[0] = QString::fromStdWString(record.content);
+			row.cells[1] = QString::fromStdWString(record.reply);
+			row.cells[2] = QString::fromStdWString(record.source);
+			row.cells[3] = QString::fromStdWString(record.fileHash);
 			previewRows.append(row);
 		}
-		m_model->setDataList(previewRows);
 
-		// 彻底删除了 ui.tableView->resizeRowsToContents();
-
-		ui.btnBrowse->setEnabled(true);
-		performSearch();
-
-		qint64 elapsedMs = stopWatch->elapsed();
-		delete stopWatch;
-		QString timeCostStr = QString("%1 秒 %2 毫秒").arg((elapsedMs / 1000) % 60).arg(elapsedMs % 1000);
-		QMessageBox::information(this, "提取战报", QString("解析装配完毕！\n提取总条数: %1 条\n耗时: %2").arg(cleanedData.size()).arg(timeCostStr));
-		watcher->deleteLater();
-		});
-
-
-	QFuture<std::vector<OpinionRecord>> future = QtConcurrent::run([this, backendPaths, isCanceled]() {
-		std::vector<OpinionRecord> finalResults;
-
-		std::vector<std::wstring> docxGroup, txtGroup, docGroup, excelGroup;
-		for (const auto& wPath : backendPaths) {
-			QString ext = QFileInfo(QString::fromStdWString(wPath)).suffix().toLower();
-			if (ext == "docx") docxGroup.push_back(wPath);
-			else if (ext == "txt") txtGroup.push_back(wPath);
-			else if (ext == "doc") docGroup.push_back(wPath);
-			else if (ext == "xlsx" || ext == "xls") excelGroup.push_back(wPath);
+		// 直接灌入沙盒加工模型，并确保隐藏哈希列
+		if (m_importModel) {
+			m_importModel->setDataList(previewRows);
 		}
 
-		int total = static_cast<int>(backendPaths.size());
-		int current = 0;
+		// 全屏切换到带有橙色呼吸边框的【沙盒加工 Page】
+		if (ui.stackedWidget) {
+			ui.stackedWidget->setCurrentIndex(1);
+		}
 
-		auto processParsedDocs = [&](const std::vector<ParsedDoc>& docs) {
-			auto cleanedDocs = OpinionCleaner::cleanBatch(docs); // 一波全洗完
+		// 如果这时候输入框里有旧文字，清空它，防止沙盒表一进来就是错的
+		if (ui.lineEditSearchImport) {
+			ui.lineEditSearchImport->clear();
+		}
 
-			for (const auto& doc : cleanedDocs) {
-				for (const auto& line : doc.lines) {
-					OpinionRecord rec;
-					rec.content = line;
-					rec.source = doc.fileName;
-					finalResults.push_back(rec);
-				}
-			}
-			};
+		ui.btnBrowse->setEnabled(true);
+		watcher->deleteLater();
 
-		auto progressCb = [&](int subCur, int subTotal, const std::wstring& fname) {
-			if (!isCanceled->load()) emit sigUpdateProgress(current + subCur, total, QString::fromStdWString(fname));
-			};
+		onExtractionFinished(extResult.parsedCount, extResult.skippedCount, extResult.movedCount, costSeconds);
 
-		if (!isCanceled->load() && !docxGroup.empty()) { processParsedDocs(DocxParser::extractTextBatch(docxGroup, progressCb)); current += static_cast<int>(docxGroup.size()); }
-		if (!isCanceled->load() && !txtGroup.empty()) { processParsedDocs(TxtParser::extractTextBatch(txtGroup, progressCb)); current += static_cast<int>(txtGroup.size()); }
-		if (!isCanceled->load() && !docGroup.empty()) { processParsedDocs(OldDocParser::extractTextBatch(docGroup, progressCb)); current += static_cast<int>(docGroup.size()); }
-		if (!isCanceled->load() && !excelGroup.empty()) { processParsedDocs(ExcelParser::extractTextBatch(excelGroup, progressCb)); }
-
-		return finalResults;
 		});
+
+	// 4. 启动后台线程，呼叫纯粹运算函数 (保持原状)
+	QFuture<ExtractionResult> future = QtConcurrent::run(
+		&OpinionViewer::executeScanAndParse,
+		this,
+		backendPaths,
+		isOverwriteMode,
+		isCanceled
+	);
 
 	watcher->setFuture(future);
 }
@@ -578,4 +842,162 @@ void OpinionViewer::updateDefaultScanPathInIni(const QString& newPath)
 		}
 	}
 	file.close();
+}
+
+void OpinionViewer::keyPressEvent(QKeyEvent* event)
+{
+	if (event->key() == Qt::Key_Escape) {
+		// 🚀 核心改造：动态判断当前在哪个模式，清空对应的搜索框
+		if (ui.stackedWidget->currentIndex() == 0) {
+			if (!ui.lineEditSearchDB->text().isEmpty()) {
+				ui.lineEditSearchDB->clear();
+			}
+		}
+		else if (ui.stackedWidget->currentIndex() == 1) {
+			if (!ui.lineEditSearchImport->text().isEmpty()) {
+				ui.lineEditSearchImport->clear();
+			}
+		}
+
+		event->accept();
+		return;
+	}
+
+	baseWindow::keyPressEvent(event);
+}
+
+ExtractionResult OpinionViewer::executeScanAndParse(const std::vector<std::wstring>& backendPaths, bool isOverwriteMode, std::shared_ptr<std::atomic<bool>> isCanceled)
+{
+	ExtractionResult result;
+	std::vector<std::wstring> docxGroup, txtGroup, docGroup, excelGroup;
+	std::unordered_map<std::wstring, std::wstring> path2HashCache;
+
+	DbWorker localThreadDbWorker; // 子线程专属的工人
+	localThreadDbWorker.initDatabase(QCoreApplication::applicationDirPath().toStdWString() + L"/opinions.db");
+
+	int total = static_cast<int>(backendPaths.size());
+	int current = 0;
+
+	// --- 阶段 1：增量预检（极速过滤层） ---
+	for (const auto& wPath : backendPaths) {
+		if (isCanceled->load()) break;
+
+		QString qPath = QString::fromStdWString(wPath);
+		long long size = FileUtil::getFileSize(qPath);
+		long long modTime = FileUtil::getLastModifiedTime(qPath).toSecsSinceEpoch();
+
+		QString shortName = QFileInfo(qPath).fileName();
+		std::wstring wShortName = shortName.toStdWString();
+
+		emit sigUpdateProgress(current, total, qPath, "⚡ 正在核对文件时间戳...");
+
+		// 第一道防线：只看大小和时间。匹配直接跳过，耗时 0 毫秒
+		if (!isOverwriteMode && localThreadDbWorker.isFileUnchanged(wShortName, size, modTime)) {
+			result.skippedCount++;
+			current++;
+			continue;
+		}
+
+		emit sigUpdateProgress(current, total, qPath, "🔍 正在核对底层 MD5 指纹...");
+		std::wstring wHash = FileUtil::calculateFileHash(qPath).toStdWString();
+
+		// 第二道防线：哈希存在，说明换了目录或改了名
+		if (!isOverwriteMode && localThreadDbWorker.isHashExists(wHash)) {
+			localThreadDbWorker.updateFilePath(wHash, wShortName);
+			result.movedCount++;
+			current++;
+			continue;
+		}
+
+		// 防御击穿：确认为需要解析的野生文件
+		result.parsedCount++;
+
+		// 存入缓存供解析和入库使用
+		FileMetaData meta{ wHash, wShortName, size, modTime };
+		result.metaCache[wShortName] = meta;
+		path2HashCache[wShortName] = wHash;
+
+		QString ext = QFileInfo(qPath).suffix().toLower();
+		if (ext == "docx") docxGroup.push_back(wPath);
+		else if (ext == "txt") txtGroup.push_back(wPath);
+		else if (ext == "doc") docGroup.push_back(wPath);
+		else if (ext == "xlsx" || ext == "xls") excelGroup.push_back(wPath);
+
+		current++;
+	}
+
+	// --- 阶段 2：重火炮解析层 ---
+	int parseCurrent = 0;
+	auto processParsedDocs = [&](const std::vector<ParsedDoc>& docs) {
+		auto cleanedDocs = OpinionCleaner::cleanBatch(docs);
+		for (const auto& doc : cleanedDocs) {
+			std::wstring docHash = path2HashCache[doc.fileName];
+			for (const auto& line : doc.lines) {
+				OpinionRecord rec;
+				rec.content = line;
+				rec.source = doc.fileName;
+				rec.fileHash = docHash;
+				result.newRecords.push_back(rec);
+			}
+		}
+		};
+
+	auto progressCb = [&](int subCur, int subTotal, const std::wstring& fname) {
+		if (!isCanceled->load()) {
+			emit sigUpdateProgress(result.skippedCount + result.movedCount + parseCurrent + subCur, total, QString::fromStdWString(fname), "正在解析文档内容...");
+		}
+		};
+
+	if (!isCanceled->load() && !docxGroup.empty()) { processParsedDocs(DocxParser::extractTextBatch(docxGroup, progressCb)); parseCurrent += static_cast<int>(docxGroup.size()); }
+	if (!isCanceled->load() && !txtGroup.empty()) { processParsedDocs(TxtParser::extractTextBatch(txtGroup, progressCb));  parseCurrent += static_cast<int>(txtGroup.size()); }
+	if (!isCanceled->load() && !docGroup.empty()) { processParsedDocs(OldDocParser::extractTextBatch(docGroup, progressCb));  parseCurrent += static_cast<int>(docGroup.size()); }
+	if (!isCanceled->load() && !excelGroup.empty()) { processParsedDocs(ExcelParser::extractTextBatch(excelGroup, progressCb)); }
+
+	return result;
+}
+
+void OpinionViewer::onUndoTriggered()
+{
+	if (m_undoStack.empty()) return; // 栈里没东西，静默返回
+
+	// 1. 拿取最近一次被删除的数据，并弹栈
+	UndoAction action = m_undoStack.top();
+	m_undoStack.pop();
+
+	if (action.records.empty()) return;
+
+	if (action.mode == 0) {
+		// ================= 历史库：尸骨还魂 =================
+		m_dbWorker.beginTransaction();
+		if (m_dbWorker.batchInsertOpinions(action.records)) {
+			m_dbWorker.commitTransaction();
+		}
+		else {
+			m_dbWorker.rollbackTransaction();
+		}
+
+		// 只有当前页面留在历史库时，才刷新 UI，防止惊动沙盒
+		if (ui.stackedWidget->currentIndex() == 0) {
+			performSearch();
+		}
+	}
+	else if (action.mode == 1) {
+		// ================= 沙盒区：回滚内存 =================
+		if (m_importModel) {
+			QVector<MyTableModel::Row> restoredRows;
+			restoredRows.reserve(action.records.size());
+
+			for (const auto& rec : action.records) {
+				MyTableModel::Row row;
+				row.cells << QString::fromStdWString(rec.content)
+					<< QString::fromStdWString(rec.reply)
+					<< QString::fromStdWString(rec.source)
+					<< QString::fromStdWString(rec.fileHash);
+				restoredRows.append(row);
+			}
+
+			// 直接插回表格顶部
+			m_importModel->prependRows(restoredRows);
+		}
+	}
 }

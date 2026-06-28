@@ -107,6 +107,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="UpdateManager.cpp" />
     <QtRcc Include="OpinionViewer.qrc" />
     <QtUic Include="OpinionViewer.ui" />
     <QtMoc Include="OpinionViewer.h" />
@@ -135,7 +136,9 @@
     <QtMoc Include="MyTableView.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\common\FileUtil.h" />
     <ClInclude Include="resource.h" />
+    <QtMoc Include="UpdateManager.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="OpinionViewer.rc" />

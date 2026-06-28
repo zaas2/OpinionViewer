@@ -11,13 +11,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpinionViewer", "OpinionVie
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DocParser", "DocParser\DocParser.vcxproj", "{32461C8B-73EF-4DEC-8B9D-2907F133B299}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ParserTester", "ParserTester\ParserTester.vcxproj", "{1F90D484-838D-4A7C-BFCA-A6D173D30183}"
-	ProjectSection(ProjectDependencies) = postProject
-		{32461C8B-73EF-4DEC-8B9D-2907F133B299} = {32461C8B-73EF-4DEC-8B9D-2907F133B299}
-	EndProjectSection
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DocParser", "DocParser2\DocParser2.vcxproj", "{748F3B2B-DB31-476D-BCF7-8224033AFFBE}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DbSearcher", "DbSearcher\DbSearcher.vcxproj", "{EA771770-67AA-47C0-8C5E-55DB188D378B}"
 EndProject
 Global
@@ -34,14 +27,6 @@ Global
 		{32461C8B-73EF-4DEC-8B9D-2907F133B299}.Debug|x64.Build.0 = Debug|x64
 		{32461C8B-73EF-4DEC-8B9D-2907F133B299}.Release|x64.ActiveCfg = Release|x64
 		{32461C8B-73EF-4DEC-8B9D-2907F133B299}.Release|x64.Build.0 = Release|x64
-		{1F90D484-838D-4A7C-BFCA-A6D173D30183}.Debug|x64.ActiveCfg = Debug|x64
-		{1F90D484-838D-4A7C-BFCA-A6D173D30183}.Debug|x64.Build.0 = Debug|x64
-		{1F90D484-838D-4A7C-BFCA-A6D173D30183}.Release|x64.ActiveCfg = Release|x64
-		{1F90D484-838D-4A7C-BFCA-A6D173D30183}.Release|x64.Build.0 = Release|x64
-		{748F3B2B-DB31-476D-BCF7-8224033AFFBE}.Debug|x64.ActiveCfg = Debug|x64
-		{748F3B2B-DB31-476D-BCF7-8224033AFFBE}.Debug|x64.Build.0 = Debug|x64
-		{748F3B2B-DB31-476D-BCF7-8224033AFFBE}.Release|x64.ActiveCfg = Release|x64
-		{748F3B2B-DB31-476D-BCF7-8224033AFFBE}.Release|x64.Build.0 = Release|x64
 		{EA771770-67AA-47C0-8C5E-55DB188D378B}.Debug|x64.ActiveCfg = Debug|x64
 		{EA771770-67AA-47C0-8C5E-55DB188D378B}.Debug|x64.Build.0 = Debug|x64
 		{EA771770-67AA-47C0-8C5E-55DB188D378B}.Release|x64.ActiveCfg = Release|x64
